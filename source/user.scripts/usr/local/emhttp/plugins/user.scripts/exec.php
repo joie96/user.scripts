@@ -113,20 +113,33 @@ switch ($_POST['action']) {
 		echo $o;
 		break;
 	case 'abortScript':
-		$script = isset($_POST['name']) ? urldecode(($_POST['name'])) : "";
-		
+		$script = isset($_POST['name']) ? urldecode($_POST['name']) : "";
+	
+		// Hol dir die PID des Hauptprozesses
 		$pid = file_get_contents("/tmp/user.scripts/running/$script");
-		exec("pkill -TERM -P $pid");
-		exec("kill -9 $pid");
-		$processListOutput = null;
-		exec("ps aux | grep -i '/tmp/user.scripts/tmpScripts/$script' | grep -v grep", $processListOutput);
-		foreach ($processListOutput as $emergencyKill) {
-			$emergencyKill = str_replace("root","",$emergencyKill);
-			$emergencyKill = trim($emergencyKill);
-			$rawKill = explode(" ",$emergencyKill);
-			logger("Kill pid: ".$rawKill[0]);
-			exec("kill -9 ".$rawKill[0]);
+	
+		/**
+		 * Rekursive Funktion zum Beenden aller Kindprozesse
+		 * @param int $pid - Die PID des Prozesses
+		 */
+		function killTree($pid) {
+			// Finde alle Kindprozesse der aktuellen PID
+			$childPids = [];
+			exec("pgrep -P $pid", $childPids);
+	
+			// Rufe killTree rekursiv für jedes Kind auf
+			foreach ($childPids as $childPid) {
+				killTree($childPid);
+			}
+	
+			// Beende die aktuelle PID
+			exec("kill -TERM $pid");
 		}
+	
+		// Rufe killTree mit der Hauptprozess-PID auf
+		killTree($pid);
+
+		// Rest
 		@unlink("/tmp/user.scripts/running/$script");
 		file_put_contents("/tmp/user.scripts/finished/$script","aborted");
 		file_put_contents("/tmp/user.scripts/tmpScripts/$script/log.txt","Execution was aborted by user\n\n",FILE_APPEND);
